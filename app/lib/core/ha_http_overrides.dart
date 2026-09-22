@@ -1,5 +1,8 @@
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
+
 import '../managers/settings/definitions.dart' as defs;
 import '../managers/settings/settings_manager.dart';
 import 'app_identity.dart';
@@ -64,3 +67,12 @@ class HaHttpOverrides extends HttpOverrides {
     return false;
   }
 }
+
+/// A client for another kiosk's remote admin. A kiosk with Use HTTPS on
+/// serves a self-signed certificate no peer can verify, so this skips the
+/// check: the traffic is encrypted, not authenticated, the same trust as
+/// plain HTTP.
+http.Client kioskPeerClient() => IOClient(kioskPeerHttpClient());
+
+HttpClient kioskPeerHttpClient() =>
+    HttpClient()..badCertificateCallback = (cert, host, port) => true;

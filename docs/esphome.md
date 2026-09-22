@@ -13,7 +13,7 @@ The exact same connection can run a **Bluetooth proxy**: Bluetooth Low Energy (B
 | Situation | Solution |
 |---|---|
 | Device not discovered | Go to **Add integration**, select **ESPHome**, and use the kiosk's IP address for the host, along with port 6053 (or whatever you set under **API port**). |
-| Visit link on the device page | This link appears if **Remote management** is on and an admin password is set (**Settings > Device > Remote Administration**). Clicking it opens the remote admin page using the address Home Assistant connects to and the remote admin **Server port**. If you turn remote management off or change the port, the link updates automatically on the next connection cycle. |
+| Visit link on the device page | This link appears if **Remote management** is on and an admin password is set (**Settings > Device > Remote Administration**). Clicking it opens the remote admin page using the address Home Assistant connects to and the remote admin **Server port**. If you turn remote management off or change the port, the link updates automatically on the next connection cycle. With **Use HTTPS** on there is no link, since Home Assistant can only open it as plain http; the Admin URL sensor carries the `https://` address instead. |
 
 ## Bluetooth Proxy
 

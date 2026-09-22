@@ -370,6 +370,69 @@ void main() {
   });
 
   test(
+    'a follower heard again with Use HTTPS on is reached over https',
+    () async {
+      await build(
+        prefs: {
+          'ks.fleet.leader': true,
+          'ks.fleet.followers': jsonEncode([
+            {
+              'id': 'bed',
+              'name': 'Bedroom',
+              'address': '192.168.1.71',
+              'port': 2324,
+              'token': 'private-token',
+            },
+          ]),
+        },
+      );
+      peers.single['tls'] = true;
+      answers['GET /api/fleet/status'] = (_) => {
+        'id': 'bed',
+        'leaderId': 'me',
+        'version': '2026.9.20',
+      };
+      await commands.execute('fleetSyncNow', const {});
+      final request = sent.lastWhere((r) => r.url.path == '/api/fleet/status');
+      expect(request.url.scheme, 'https');
+      expect(fleet.followers.single.tls, isTrue);
+      final saved = jsonDecode(settings.get(defs.fleetFollowers)) as List;
+      expect(saved.single['tls'], isTrue);
+    },
+  );
+
+  test("the shared roster carries each follower's scheme", () async {
+    peers.clear();
+    await build(
+      prefs: {
+        'ks.fleet.leader': true,
+        'ks.fleet.followers': jsonEncode([
+          {
+            'id': 'bed',
+            'name': 'Bedroom',
+            'address': '192.168.1.71',
+            'port': 2324,
+            'tls': true,
+            'token': 'private-token',
+          },
+        ]),
+      },
+    );
+    answers['GET /api/fleet/status'] = (_) => {
+      'id': 'bed',
+      'leaderId': 'me',
+      'version': '2026.9.20',
+      'rosterRevision': '',
+    };
+    answers['POST /api/fleet/roster'] = (_) => {'ok': true};
+    await commands.execute('fleetSyncNow', const {});
+    final request = sent.singleWhere((r) => r.url.path == '/api/fleet/roster');
+    expect(request.url.scheme, 'https');
+    final devices = (jsonDecode(request.body) as Map)['devices'] as List;
+    expect(devices.singleWhere((d) => d['id'] == 'bed')['tls'], isTrue);
+  });
+
+  test(
     'polls saved followers and shares membership across versions without mDNS',
     () async {
       peers.clear();
@@ -410,9 +473,11 @@ void main() {
       final request = sent.singleWhere(
         (r) => r.url.path == '/api/fleet/roster',
       );
+      expect(request.url.scheme, 'http');
       expect(request.headers['authorization'], 'Bearer private-token');
       final roster = (jsonDecode(request.body) as Map)['devices'] as List;
       expect(roster.map((d) => d['id']), ['bed', 'me']);
+      expect(roster.first['tls'], isFalse);
       expect(roster.first['name'], 'New bedroom name');
       expect(request.body, isNot(contains('private-token')));
       expect(request.body, isNot(contains('private-nonce')));

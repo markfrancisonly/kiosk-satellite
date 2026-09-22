@@ -1067,6 +1067,9 @@ String messageById(UiStrings strings, String? id, String fallback) =>
       'settingCameraRtspAudioTitle' => strings.settingCameraRtspAudioTitle,
       'settingCameraRtspAudioDescription' =>
         strings.settingCameraRtspAudioDescription,
+      'settingCameraRtspTlsTitle' => strings.settingCameraRtspTlsTitle,
+      'settingCameraRtspTlsDescription' =>
+        strings.settingCameraRtspTlsDescription,
       'settingCameraRtspAuthTitle' => strings.settingCameraRtspAuthTitle,
       'settingCameraRtspAuthDescription' =>
         strings.settingCameraRtspAuthDescription,
@@ -1390,6 +1393,8 @@ String messageById(UiStrings strings, String? id, String fallback) =>
         strings.settingRemoteFleetDiscoveryTitle,
       'settingRemoteFleetDiscoveryDescription' =>
         strings.settingRemoteFleetDiscoveryDescription,
+      'settingRemoteTlsTitle' => strings.settingRemoteTlsTitle,
+      'settingRemoteTlsDescription' => strings.settingRemoteTlsDescription,
       'deviceRemotePage' => strings.deviceRemotePage,
       'deviceAdminAddress' => strings.deviceAdminAddress,
       'deviceAdminAddressHelp' => strings.deviceAdminAddressHelp,

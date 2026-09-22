@@ -596,7 +596,7 @@ class CameraMotion(
         val listenerId = listenerSession
         CameraDiagnostics.record(listenerId, "configure", "enabled=${config["enabled"]}, port=${config["port"]}, " +
             "video=${config["width"]}x${config["height"]}, fps=${config["fps"]}, bitrate=${config["bitrate"]}, " +
-            "authentication=${config["auth"]}")
+            "authentication=${config["auth"]}, tls=${config["tls"] == true}")
         stopOnvifDiscovery()
         rtsp?.close()
         rtsp = null
@@ -626,6 +626,13 @@ class CameraMotion(
                     preferences.edit().putString("device_id", it).apply()
                 }
                 val deviceName = (config["name"] as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: android.os.Build.MODEL
+                // The PEM pair Dart hands over (core/tls_identity.dart) for the
+                // RTSP protocol; a pair that does not load is a listener failure
+                // like any other.
+                val tls = if (config["tls"] == true) TlsCertificate.sslContext(
+                    config["certificate"] as? String ?: "", config["privateKey"] as? String ?: "",
+                    { android.util.Base64.decode(it, android.util.Base64.DEFAULT) },
+                ) else null
                 val onvif = if (config["protocol"] == "onvif") CameraOnvifService(
                     (config["width"] as? Number)?.toInt() ?: 640,
                     (config["height"] as? Number)?.toInt() ?: 480,
@@ -649,6 +656,7 @@ class CameraMotion(
                         failure = cause != null, cause = cause) },
                     onvif = onvif,
                     streamName = deviceName,
+                    tls = tls,
                     audioEnabled = config["audio"] == true,
                     onAudioDemand = { wanted -> mainHandler.post {
                         if (!disposed && rtspGeneration == generation) {
@@ -748,7 +756,7 @@ class CameraMotion(
             java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
                 .flatMap { java.util.Collections.list(it.inetAddresses) }
                 .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
-                .map { "rtsp://${it.hostAddress}:${rtspConfig["port"] ?: 8554}/camera" }
+                .map { "${if (rtspConfig["tls"] == true) "rtsps" else "rtsp"}://${it.hostAddress}:${rtspConfig["port"] ?: 8554}/camera" }
         } catch (_: Exception) { emptyList<String>() },
     )
 

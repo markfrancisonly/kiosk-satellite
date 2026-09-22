@@ -109,6 +109,7 @@ void main() {
       // The device name as a DNS label under ks-, seeded at init.
       'hostname': 'ks-living-room',
       'fleet': true,
+      'tls': false,
     });
     expect(listens, 1);
     expect(fleet.running, isTrue);
@@ -164,6 +165,7 @@ void main() {
       'port': 2324,
       'hostname': 'ks-living-room',
       'fleet': false,
+      'tls': false,
     });
     expect(fleet.enabled, isFalse);
     expect(fleet.running, isTrue);
@@ -251,9 +253,24 @@ void main() {
       // Seeded at init and kept through the rename.
       'hostname': 'ks-living-room',
       'fleet': true,
+      'tls': false,
     });
     // Still the one stream: a restart is a re-announce, not a new listen.
     expect(listens, 1);
+  });
+
+  test('Use HTTPS travels in the announcement and the addresses', () async {
+    await build({...serving, 'ks.remote.tls': true});
+    final start = calls.singleWhere((c) => c.method == 'start');
+    expect(start.arguments['tls'], isTrue);
+    expect(fleet.hostUrl, 'https://ks-living-room.local:2324');
+    // The switch flipping re-announces at once, and the admin address
+    // follows it.
+    await settings.set(defs.remoteTls, false);
+    await pump();
+    expect(calls.last.method, 'start');
+    expect(calls.last.arguments['tls'], isFalse);
+    expect(fleet.hostUrl, 'http://ks-living-room.local:2324');
   });
 
   test('lists this device first and the others by name', () async {
@@ -268,6 +285,7 @@ void main() {
           'version': '2026.9.17',
           'address': '192.168.1.70',
           'port': 2324,
+          'tls': true,
         },
         {
           'id': 'bbbb',
@@ -294,6 +312,7 @@ void main() {
     expect(devices.first['self'], isTrue);
     expect(devices[1]['self'], isFalse);
     expect(devices[1]['url'], 'http://192.168.1.71:2324');
+    expect(devices[2]['url'], 'https://192.168.1.70:2324');
     expect(devices[2]['version'], '2026.9.17');
   });
 
@@ -418,6 +437,7 @@ void main() {
     };
     await commands.execute('fleet', const {});
     expect(fleet.devices.last.address, '192.168.1.72');
+    expect(fleet.devices.last.url, 'http://192.168.1.72:2324');
     expect(fleet.devices, hasLength(2));
 
     // The leader saves the new address after polling the member.

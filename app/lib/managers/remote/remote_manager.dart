@@ -8,7 +8,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show md5;
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/services.dart'
-    show AssetBundle, AssetManifest, rootBundle;
+    show AssetBundle, AssetManifest, MissingPluginException, rootBundle;
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
@@ -17,6 +17,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../core/command_registry.dart';
 import '../../core/events.dart';
 import '../../core/manager.dart';
+import '../../core/tls_identity.dart';
 import '../settings/definitions.dart' as defs;
 import '../settings/settings_manager.dart';
 import 'auth.dart';
@@ -34,12 +35,36 @@ class RemoteManager extends Manager {
     super.log,
     this._settings, {
     AssetBundle? assetBundle,
-  }) : _assetBundle = assetBundle ?? rootBundle;
+    TlsIdentity? tls,
+  }) : _assetBundle = assetBundle ?? rootBundle,
+       _tlsShared = tls;
 
   final AssetBundle _assetBundle;
 
   final SettingsManager _settings;
   late final AuthStore _auth;
+
+  /// The certificate Use HTTPS serves with, shared with the camera stream
+  /// by the composition root; one of this manager's own otherwise (tests).
+  final TlsIdentity? _tlsShared;
+  late final TlsIdentity _tls = _tlsShared ?? TlsIdentity(_settings, bus, log);
+
+  /// Whether the running server speaks TLS, and with which certificate:
+  /// a sync restarts it when a renewal replaced that one.
+  bool _servedTls = false;
+  String? _servedFingerprint;
+
+  /// Syncs run one at a time: a renewal during a start asks for another
+  /// sync, and that one must see the started server rather
+  /// than start a second one on the same port. A sync asked for while
+  /// one runs is a re-run after it, not a stored future: a future kept
+  /// across calls would bind later syncs to the zone that made it.
+  bool _syncing = false;
+  bool _syncAgain = false;
+
+  /// The restart a renewal asks for, a moment later: the renewal may have
+  /// come in over this server, and the restart closes every connection.
+  Timer? _renewalRestart;
 
   @override
   String get name => 'remote';
@@ -130,6 +155,47 @@ class RemoteManager extends Manager {
           );
         },
       ),
+    );
+
+    // The certificate both servers present, for trusting it elsewhere
+    // (its fingerprint is what a browser's warning shows) and for making
+    // a new one after a rename or a move.
+    commands.register(
+      Command(
+        name: 'tlsCertificate',
+        description:
+            'The certificate the kiosk serves HTTPS and RTSPS with: SHA-256 '
+            'fingerprint, expiry and PEM text.',
+        quiet: true,
+        handler: (_) async {
+          try {
+            return CommandResult.ok((await _tls.load()).toJson());
+          } catch (e) {
+            return CommandResult.fail('$e');
+          }
+        },
+      ),
+    );
+    commands.register(
+      Command(
+        name: 'renewTlsCertificate',
+        description:
+            'Makes a new self-signed certificate and restarts whatever '
+            'serves with it.',
+        handler: (_) async {
+          try {
+            return CommandResult.ok((await _tls.renew()).toJson());
+          } catch (e) {
+            return CommandResult.fail('$e');
+          }
+        },
+      ),
+    );
+    _subscriptions.add(
+      bus.on<TlsIdentityChanged>().listen((_) {
+        _renewalRestart?.cancel();
+        _renewalRestart = Timer(const Duration(seconds: 1), _sync);
+      }),
     );
 
     _subscriptions.add(
@@ -236,6 +302,7 @@ class RemoteManager extends Manager {
         if (e.key == defs.remoteEnabled.key ||
             e.key == defs.remotePort.key ||
             e.key == defs.remotePassword.key ||
+            e.key == defs.remoteTls.key ||
             // Setup completing (start URL set) may mean the server should
             // stop — the wizard ran on the setup-mode allowance alone.
             e.key == defs.startUrl.key) {
@@ -282,16 +349,38 @@ class RemoteManager extends Manager {
   bool get _setupMode => _settings.get(defs.startUrl).isEmpty;
 
   Future<void> _sync() async {
+    if (_syncing) {
+      _syncAgain = true;
+      return;
+    }
+    _syncing = true;
+    try {
+      do {
+        _syncAgain = false;
+        await _syncNow();
+      } while (_syncAgain);
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  Future<void> _syncNow() async {
     final enabled = _settings.get(defs.remoteEnabled);
     final hasPassword = _settings.get(defs.remotePassword).isNotEmpty;
     final port = _settings.get(defs.remotePort).toInt();
+    final tls = _settings.get(defs.remoteTls);
     final wantRunning = _setupMode || (enabled && hasPassword);
     if (wantRunning && _server == null) {
       await _start();
     } else if (!wantRunning && _server != null) {
       await _stop();
-    } else if (wantRunning && _server != null && _server!.port != port) {
-      // The port changed; only that warrants a restart. A password set or
+    } else if (wantRunning &&
+        _server != null &&
+        (_server!.port != port ||
+            tls != _servedTls ||
+            (tls && _tls.current?.fingerprint != _servedFingerprint))) {
+      // The port or the scheme changed, or the certificate under a TLS
+      // server did; only those warrant a restart. A password set or
       // changed while serving (the onboarding wizard's first step sets
       // one, from this very server) used to restart it too, which cut the
       // reply to the request that set it: the browser saw a failed fetch,
@@ -314,14 +403,38 @@ class RemoteManager extends Manager {
 
   Future<void> _start() async {
     final port = _settings.get(defs.remotePort).toInt();
+    final tls = _settings.get(defs.remoteTls);
+    SecurityContext? context;
+    String? certificate;
+    if (tls) {
+      try {
+        final material = await _tls.load();
+        context = material.securityContext();
+        certificate = material.fingerprint;
+      } catch (e) {
+        _startError = e is MissingPluginException
+            ? 'HTTPS is not available on this platform.'
+            : 'Could not load the TLS certificate: $e';
+        log.error(name, 'failed to start on :$port: $_startError');
+        return;
+      }
+    }
     try {
       _server = await shelf_io.serve(
         const Pipeline().addHandler(_route),
         InternetAddress.anyIPv4,
         port,
+        securityContext: context,
       );
+      _servedTls = tls;
+      _servedFingerprint = certificate;
       _startError = null;
-      log.info(name, 'listening on :$port');
+      log.info(
+        name,
+        tls
+            ? 'listening on :$port over https, certificate $certificate'
+            : 'listening on :$port',
+      );
     } catch (e) {
       _startError = 'Could not listen on port $port: $e';
       log.error(name, 'failed to start on :$port: $e');
@@ -1465,6 +1578,7 @@ class RemoteManager extends Manager {
   @override
   Future<void> dispose() {
     _statsTimer?.cancel();
+    _renewalRestart?.cancel();
     _observations.dispose();
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());

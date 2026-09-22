@@ -104,6 +104,32 @@
       ]
     }
   },
+  "settingRemoteTlsTitle": "Use HTTPS",
+  "@settingRemoteTlsTitle": {
+    "context": "Settings:Device:Remote Administration",
+    "description": "Setting label.",
+    "x-locations": {
+      "device": [
+        "Settings > Device > Remote Administration"
+      ],
+      "remoteAdmin": [
+        "Device > Remote Administration"
+      ]
+    }
+  },
+  "settingRemoteTlsDescription": "Serve the remote admin and its API over TLS with a certificate the kiosk makes for itself. A browser warns about it until it is trusted; other kiosks follow the change by themselves.",
+  "@settingRemoteTlsDescription": {
+    "context": "Settings:Device:Remote Administration",
+    "description": "Help below the setting.",
+    "x-locations": {
+      "device": [
+        "Settings > Device > Remote Administration"
+      ],
+      "remoteAdmin": [
+        "Device > Remote Administration"
+      ]
+    }
+  },
   "deviceRemotePage": "Remote Administration",
   "@deviceRemotePage": {
     "context": "Settings:Device:Remote Administration",

@@ -14409,6 +14409,32 @@
       ]
     }
   },
+  "settingCameraRtspTlsTitle": "Encrypt the stream",
+  "@settingCameraRtspTlsTitle": {
+    "context": "Settings > Camera > RTSP & ONVIF Streaming",
+    "description": "Setting label.",
+    "x-locations": {
+      "device": [
+        "Settings > Camera > RTSP & ONVIF Streaming"
+      ],
+      "remoteAdmin": [
+        "Camera > RTSP & ONVIF Streaming"
+      ]
+    }
+  },
+  "settingCameraRtspTlsDescription": "Serve RTSP over TLS (rtsps://) with the kiosk's own self-signed certificate. Viewers must accept it: ffmpeg does, go2rtc does for an address rather than a name. ONVIF always stays plain, as Home Assistant expects.",
+  "@settingCameraRtspTlsDescription": {
+    "context": "Settings > Camera > RTSP & ONVIF Streaming",
+    "description": "Help below this setting.",
+    "x-locations": {
+      "device": [
+        "Settings > Camera > RTSP & ONVIF Streaming"
+      ],
+      "remoteAdmin": [
+        "Camera > RTSP & ONVIF Streaming"
+      ]
+    }
+  },
   "settingCameraRtspAuthTitle": "Require authentication",
   "@settingCameraRtspAuthTitle": {
     "context": "Settings > Camera > RTSP & ONVIF Streaming",
@@ -18411,6 +18437,32 @@
   },
   "settingRemoteFleetDiscoveryDescription": "Announce this device on the network and list the other kiosks in the remote admin, to switch between them.",
   "@settingRemoteFleetDiscoveryDescription": {
+    "context": "Settings:Device:Remote Administration",
+    "description": "Help below the setting.",
+    "x-locations": {
+      "device": [
+        "Settings > Device > Remote Administration"
+      ],
+      "remoteAdmin": [
+        "Device > Remote Administration"
+      ]
+    }
+  },
+  "settingRemoteTlsTitle": "Use HTTPS",
+  "@settingRemoteTlsTitle": {
+    "context": "Settings:Device:Remote Administration",
+    "description": "Setting label.",
+    "x-locations": {
+      "device": [
+        "Settings > Device > Remote Administration"
+      ],
+      "remoteAdmin": [
+        "Device > Remote Administration"
+      ]
+    }
+  },
+  "settingRemoteTlsDescription": "Serve the remote admin and its API over TLS with a certificate the kiosk makes for itself. A browser warns about it until it is trusted; other kiosks follow the change by themselves.",
+  "@settingRemoteTlsDescription": {
     "context": "Settings:Device:Remote Administration",
     "description": "Help below the setting.",
     "x-locations": {

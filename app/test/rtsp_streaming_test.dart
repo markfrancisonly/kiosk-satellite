@@ -12,7 +12,10 @@ import 'package:kiosk_satellite/managers/device_camera/device_camera_manager.dar
 import 'package:kiosk_satellite/managers/motion/motion_manager.dart';
 import 'package:kiosk_satellite/managers/settings/definitions.dart' as defs;
 import 'package:kiosk_satellite/managers/settings/settings_manager.dart';
+import 'package:kiosk_satellite/core/tls_identity.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'tls_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +28,8 @@ void main() {
   Map? stream;
   MockStreamHandlerEventSink? sink;
   late CommandRegistry commands;
+  late TlsIdentity tls;
+  var generated = 0;
   final pauses = <bool>[];
 
   Future<void> settle() async {
@@ -82,6 +87,11 @@ void main() {
         },
       ),
     );
+    generated = 0;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('kiosk_satellite/tls'),
+      (_) async => generatedPair(++generated),
+    );
     SharedPreferences.setMockInitialValues({
       'ks.camera.enabled': true,
       'ks.camera.rtsp.enabled': true,
@@ -91,11 +101,13 @@ void main() {
     commands = CommandRegistry(log);
     settings = SettingsManager(bus, commands, log);
     await settings.init();
+    tls = TlsIdentity(settings, bus, log);
     motion = MotionManager(
       bus,
       commands,
       log,
       settings,
+      tls: tls,
       selfLightQuiet: Duration.zero,
     );
     await motion.init();
@@ -128,6 +140,83 @@ void main() {
       await settle();
       expect(configurations.last['dateTime'], false);
       expect(identical(stream, activeStream), true);
+    },
+  );
+
+  test('Encrypt the stream hands the listener the kiosk certificate', () async {
+    expect(configurations.last['tls'], false);
+    expect(configurations.last.containsKey('certificate'), isFalse);
+    await settings.set(defs.cameraRtspTls, true);
+    await pumpEventQueue();
+    expect(configurations.last['tls'], true);
+    expect(configurations.last['certificate'], testCertificatePem);
+    expect(configurations.last['privateKey'], testPrivateKeyPem);
+    // A renewal reaches the listener, which rebinds on the new one.
+    await tls.renew();
+    await pumpEventQueue();
+    expect(configurations.last['certificate'], testRenewedCertificatePem);
+    await settings.set(defs.cameraRtspTls, false);
+    await settle();
+    expect(configurations.last['tls'], false);
+    expect(configurations.last.containsKey('privateKey'), isFalse);
+  });
+
+  test('a renewal leaves the viewers of a plain stream alone', () async {
+    await demand(true);
+    final before = stream;
+    expect(before?['rtsp'], true);
+    final configured = configurations.length;
+    await tls.renew();
+    await pumpEventQueue();
+    expect(stream, same(before));
+    expect(configurations, hasLength(configured));
+  });
+
+  test(
+    'Encrypt the stream without a certificate stops the listener rather than serving plain text',
+    () async {
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('kiosk_satellite/tls'),
+        (_) async =>
+            throw PlatformException(code: 'read_failed', message: 'no keys'),
+      );
+      expect(configurations.last['enabled'], true);
+      await settings.set(defs.cameraRtspTls, true);
+      await pumpEventQueue();
+      expect(configurations.last['tls'], true);
+      expect(configurations.last['enabled'], false);
+      expect(configurations.last.containsKey('privateKey'), isFalse);
+      var status =
+          (await commands.execute('getRtspStatus', const {})).data as Map;
+      expect('${status['error']}', contains('certificate'));
+      // Once a certificate can be had, the listener comes up encrypted.
+      generated = 0;
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('kiosk_satellite/tls'),
+        (_) async => generatedPair(++generated),
+      );
+      await tls.renew();
+      await pumpEventQueue();
+      expect(configurations.last['enabled'], true);
+      expect(configurations.last['certificate'], testCertificatePem);
+      status = (await commands.execute('getRtspStatus', const {})).data as Map;
+      expect(status['error'], isNull);
+    },
+  );
+
+  test(
+    'Encrypt the stream belongs to the RTSP protocol; ONVIF stays plain',
+    () async {
+      await settings.set(defs.cameraRtspTls, true);
+      await settings.set(defs.cameraStreamingProtocol, 'onvif');
+      await settle();
+      expect(configurations.last['protocol'], 'onvif');
+      expect(configurations.last['tls'], false);
+      expect(configurations.last.containsKey('certificate'), isFalse);
+      expect(settings.visible(defs.cameraRtspTls), isFalse);
+      await settings.set(defs.cameraStreamingProtocol, 'rtsp');
+      await settle();
+      expect(settings.visible(defs.cameraRtspTls), isTrue);
     },
   );
 

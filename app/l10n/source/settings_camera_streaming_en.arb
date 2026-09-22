@@ -234,6 +234,32 @@
       ]
     }
   },
+  "settingCameraRtspTlsTitle": "Encrypt the stream",
+  "@settingCameraRtspTlsTitle": {
+    "context": "Settings > Camera > RTSP & ONVIF Streaming",
+    "description": "Setting label.",
+    "x-locations": {
+      "device": [
+        "Settings > Camera > RTSP & ONVIF Streaming"
+      ],
+      "remoteAdmin": [
+        "Camera > RTSP & ONVIF Streaming"
+      ]
+    }
+  },
+  "settingCameraRtspTlsDescription": "Serve RTSP over TLS (rtsps://) with the kiosk's own self-signed certificate. Viewers must accept it: ffmpeg does, go2rtc does for an address rather than a name. ONVIF always stays plain, as Home Assistant expects.",
+  "@settingCameraRtspTlsDescription": {
+    "context": "Settings > Camera > RTSP & ONVIF Streaming",
+    "description": "Help below this setting.",
+    "x-locations": {
+      "device": [
+        "Settings > Camera > RTSP & ONVIF Streaming"
+      ],
+      "remoteAdmin": [
+        "Camera > RTSP & ONVIF Streaming"
+      ]
+    }
+  },
   "settingCameraRtspAuthTitle": "Require authentication",
   "@settingCameraRtspAuthTitle": {
     "context": "Settings > Camera > RTSP & ONVIF Streaming",

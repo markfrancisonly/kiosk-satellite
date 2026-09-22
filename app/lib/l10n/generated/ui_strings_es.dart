@@ -3981,6 +3981,13 @@ class UiStringsEs extends UiStrings {
       'Incluye audio del micrófono en la transmisión de la cámara. Usa la configuración del micrófono. ADVERTENCIA: Aumenta el consumo de CPU.';
 
   @override
+  String get settingCameraRtspTlsTitle => 'Encrypt the stream';
+
+  @override
+  String get settingCameraRtspTlsDescription =>
+      'Serve RTSP over TLS (rtsps://) with the kiosk\'s own self-signed certificate. Viewers must accept it: ffmpeg does, go2rtc does for an address rather than a name. ONVIF always stays plain, as Home Assistant expects.';
+
+  @override
   String get settingCameraRtspAuthTitle => 'Exigir autenticación';
 
   @override
@@ -5050,6 +5057,13 @@ class UiStringsEs extends UiStrings {
   @override
   String get settingRemoteFleetDiscoveryDescription =>
       'Anuncia este dispositivo en la red y muestra los otros kioskos en la administración remota para cambiar entre ellos.';
+
+  @override
+  String get settingRemoteTlsTitle => 'Use HTTPS';
+
+  @override
+  String get settingRemoteTlsDescription =>
+      'Serve the remote admin and its API over TLS with a certificate the kiosk makes for itself. A browser warns about it until it is trusted; other kiosks follow the change by themselves.';
 
   @override
   String get deviceRemotePage => 'Administración remota';

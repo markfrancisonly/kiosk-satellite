@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/command_registry.dart';
 import '../../core/events.dart';
+import '../../core/ha_http_overrides.dart' show kioskPeerClient;
 import '../../core/manager.dart';
 import '../gestures/gesture_mappings.dart';
 import '../settings/definitions.dart' as defs;
@@ -169,6 +170,7 @@ class Follower {
     required this.name,
     required this.address,
     required this.port,
+    this.tls = false,
     this.token,
     this.invite,
     this.profile,
@@ -182,6 +184,9 @@ class Follower {
   String name;
   String address;
   int port;
+
+  /// Whether its admin port serves HTTPS.
+  bool tls;
 
   /// The fleet token the kiosk minted on accepting, null until then (or
   /// after it left).
@@ -216,7 +221,17 @@ class Follower {
   /// own count, so the poll never overwrites it.
   double? sending;
 
-  String get url => Uri(scheme: 'http', host: address, port: port).toString();
+  String get url => adminUri(address, port, tls: tls).toString();
+
+  /// The public face of this follower, for rosters and the switcher.
+  FleetDevice toDevice() => FleetDevice(
+    id: id,
+    name: name,
+    version: version,
+    address: address,
+    port: port,
+    tls: tls,
+  );
 
   static Follower? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -228,6 +243,7 @@ class Follower {
       name: '${raw['name'] ?? ''}',
       address: '${raw['address'] ?? ''}',
       port: port is num ? port.toInt() : 2324,
+      tls: raw['tls'] == true,
       token: raw['token'] as String?,
       invite: raw['invite'] as String?,
       profile: raw['profile'] as String?,
@@ -243,6 +259,7 @@ class Follower {
     'name': name,
     'address': address,
     'port': port,
+    if (tls) 'tls': true,
     if (token != null) 'token': token,
     if (invite != null) 'invite': invite,
     if (profile != null) 'profile': profile,
@@ -276,7 +293,7 @@ class FleetSyncManager extends Manager {
   String get name => 'fleetsync';
 
   /// Swapped for a fake in tests.
-  http.Client Function() clientFactory = http.Client.new;
+  http.Client Function() clientFactory = kioskPeerClient;
 
   /// How long one call to another kiosk may take. A kiosk on the list is on
   /// the same network, so anything past this is a kiosk that is not there.
@@ -640,23 +657,24 @@ class FleetSyncManager extends Manager {
       var changed = false;
       for (final f in _followers) {
         if (only != null && f.id != only) continue;
-        final peer = peers[f.id];
-        if (peer != null) {
-          final address = '${peer['address'] ?? f.address}';
-          final port = (peer['port'] as num?)?.toInt() ?? f.port;
-          final version = '${peer['version'] ?? f.version}';
-          final peerName = '${peer['name'] ?? f.name}';
-          if (address != f.address ||
-              port != f.port ||
-              version != f.version ||
-              peerName != f.name) {
-            f
-              ..address = address
-              ..port = port
-              ..version = version
-              ..name = peerName;
-            changed = true;
-          }
+        // Heard again: the announcement is the truth about where and how
+        // its admin answers, the scheme included.
+        final heard = FleetDevice.fromMap(
+          peers[f.id]?.cast<Object?, Object?>(),
+        );
+        if (heard != null &&
+            (heard.address != f.address ||
+                heard.port != f.port ||
+                heard.tls != f.tls ||
+                heard.version != f.version ||
+                heard.name != f.name)) {
+          f
+            ..address = heard.address
+            ..port = heard.port
+            ..tls = heard.tls
+            ..version = heard.version
+            ..name = heard.name;
+          changed = true;
         }
         // Membership survives missing multicast. Try the saved endpoint
         // and let its answer determine whether this follower is online.
@@ -779,14 +797,7 @@ class FleetSyncManager extends Manager {
     final members = [
       _self!,
       for (final f in _followers)
-        if (f.token != null && f.invite == null && !f.declined)
-          FleetDevice(
-            id: f.id,
-            name: f.name,
-            version: f.version,
-            address: f.address,
-            port: f.port,
-          ),
+        if (f.token != null && f.invite == null && !f.declined) f.toDevice(),
     ]..sort((a, b) => a.id.compareTo(b.id));
     final devices = [for (final member in members) member.toDirectory()];
     final revision = _rosterRevision(jsonEncode(devices));
@@ -1370,10 +1381,10 @@ class FleetSyncManager extends Manager {
         if (!taken.contains(e.key))
           () async {
             final p = e.value;
-            final url = Uri(
-              scheme: 'http',
-              host: '${p['address']}',
-              port: (p['port'] as num).toInt(),
+            final url = adminUri(
+              '${p['address']}',
+              (p['port'] as num).toInt(),
+              tls: p['tls'] == true,
             ).toString();
             // The status matters: a build without the endpoint answers
             // its login gate with a JSON body of its own.
@@ -1408,6 +1419,7 @@ class FleetSyncManager extends Manager {
     Object? port, {
     String? expectedId,
     bool allowExisting = false,
+    bool? tls,
   }) async {
     if (!leading) return ('Lead this fleet is off', null);
     if (!enabled) {
@@ -1431,8 +1443,19 @@ class FleetSyncManager extends Manager {
     if (_selfId.isEmpty) {
       return ('This kiosk identity is not ready yet. Try again.', null);
     }
-    final url = Uri(scheme: 'http', host: ip.address, port: number);
-    final probe = await _get('$url/api/fleet/identity');
+    // The scheme the kiosk was heard with first; typed in by hand it is
+    // unknown, so plain http, then TLS, which is what a kiosk with Use
+    // HTTPS on answers with.
+    var secure = tls ?? false;
+    var probe = await _get(
+      '${adminUri(ip.address, number, tls: secure)}/api/fleet/identity',
+    );
+    if (probe == null) {
+      secure = !secure;
+      probe = await _get(
+        '${adminUri(ip.address, number, tls: secure)}/api/fleet/identity',
+      );
+    }
     if (probe == null) return ('That kiosk did not answer', null);
     if (probe.statusCode != 200) {
       return (
@@ -1471,6 +1494,7 @@ class FleetSyncManager extends Manager {
         'version': identity['version'],
         'address': ip.address,
         'port': number,
+        'tls': secure,
         'supported': true,
         'manual': true,
       },
@@ -1491,11 +1515,13 @@ class FleetSyncManager extends Manager {
       return 'No such profile';
     }
     final manual = address != null;
+    bool? tls;
     if (!manual) {
       final peer = (await _peers())[id];
       final saved = _follower(id);
       address = peer?['address'] ?? saved?.address;
       port = peer?['port'] ?? saved?.port;
+      tls = peer == null ? saved?.tls : peer['tls'] == true;
       if (address == null) return 'That kiosk is not on the network right now';
     }
     final (error, found) = await lookupKiosk(
@@ -1503,12 +1529,14 @@ class FleetSyncManager extends Manager {
       port,
       expectedId: id,
       allowExisting: !manual,
+      tls: tls,
     );
     if (error != null) return error;
     final peer = found!;
     final host = peer['address'] as String;
     final adminPort = peer['port'] as int;
-    final url = Uri(scheme: 'http', host: host, port: adminPort);
+    final secure = peer['tls'] == true;
+    final url = adminUri(host, adminPort, tls: secure);
     final nonce = _nonce();
     final res = await _post('$url/api/fleet/invite', {
       'invite': nonce,
@@ -1517,6 +1545,7 @@ class FleetSyncManager extends Manager {
         'name': _selfName,
         'version': _selfVersion,
         'port': _settings.get(defs.remotePort).toInt(),
+        'tls': _settings.get(defs.remoteTls),
       },
     });
     final body = _jsonOf(res);
@@ -1532,11 +1561,13 @@ class FleetSyncManager extends Manager {
           name: '${peer['name'] ?? host}',
           address: host,
           port: adminPort,
+          tls: secure,
         );
     f
       ..name = '${peer['name'] ?? f.name}'
       ..address = host
       ..port = adminPort
+      ..tls = secure
       ..version = '${peer['version'] ?? ''}'
       ..profile = profile == null || profile == SyncProfile.defaultId
           ? null
@@ -1885,15 +1916,16 @@ class FleetSyncManager extends Manager {
     }
     final leaderId = '${leaderRaw['id'] ?? ''}';
     final port = (leaderRaw['port'] as num?)?.toInt() ?? 2324;
+    final tls = leaderRaw['tls'] == true;
     if (leaderId.isEmpty) return ('Malformed invitation', null);
     // The kiosk at the address the invitation came from must be the one
     // it claims to be and must lead.
     final identity = _jsonOf(
       await _get(
-        Uri(
-          scheme: 'http',
-          host: address,
-          port: port,
+        adminUri(
+          address,
+          port,
+          tls: tls,
           path: '/api/fleet/identity',
         ).toString(),
       ),
@@ -1911,6 +1943,7 @@ class FleetSyncManager extends Manager {
       'version': '${leaderRaw['version'] ?? identity['version'] ?? ''}',
       'address': address,
       'port': port,
+      'tls': tls,
     };
     // Already this kiosk's leader (a removal that never reached here, an
     // invitation sent again): nothing to confirm, the trust is standing.

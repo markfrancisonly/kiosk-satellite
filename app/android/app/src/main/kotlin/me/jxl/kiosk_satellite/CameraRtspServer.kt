@@ -2,6 +2,7 @@ package me.jxl.kiosk_satellite
 
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.InetSocketAddress
@@ -10,10 +11,14 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import kotlin.concurrent.thread
 
 /** RTSP 1.0 and H.264 RTP over TCP, with one bounded queue per viewer.
  * No camera or codec work happens here. The owner supplies compressed access units.
+ * With [tls] the listener speaks RTSPS: the same protocol on a TLS socket,
+ * handshaken on each viewer's own thread.
  */
 class CameraRtspServer(
     port: Int,
@@ -27,6 +32,7 @@ class CameraRtspServer(
     private val onAudioDemand: (Boolean) -> Unit = {},
     private val onvif: CameraOnvifService? = null,
     streamName: String = "Kiosk Satellite camera",
+    private val tls: SSLContext? = null,
 ) {
     private val sessionName = streamName.replace('\r', ' ').replace('\n', ' ')
     @Volatile private var running = true
@@ -46,7 +52,7 @@ class CameraRtspServer(
     private val clients = CopyOnWriteArrayList<Client>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, "ks-rtsp-scheduler").apply { isDaemon = true } }
     private var idleTask: java.util.concurrent.ScheduledFuture<*>? = null
-    private val server = ServerSocket().apply {
+    private val server = (tls?.serverSocketFactory?.createServerSocket() ?: ServerSocket()).apply {
         reuseAddress = true
         try { bind(InetSocketAddress(port), 4) } catch (e: Exception) { close(); throw e }
     }
@@ -225,8 +231,8 @@ class CameraRtspServer(
         private var sequence = 0
         private var channel = 0
         private val queue = ArrayBlockingQueue<Frame>(40)
-        private val output = socket.getOutputStream()
-        private val input = BufferedInputStream(socket.getInputStream())
+        private lateinit var output: OutputStream
+        private lateinit var input: BufferedInputStream
         private val session = java.util.UUID.randomUUID().toString().replace("-", "")
         private val ssrc = session.hashCode()
 
@@ -236,7 +242,7 @@ class CameraRtspServer(
             "port" to socket.port,
             "userAgent" to userAgent,
             "playing" to playing,
-            "transport" to "TCP",
+            "transport" to if (tls == null) "TCP" else "TLS",
             "connectedSeconds" to TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - connectedNs),
         )
 
@@ -278,6 +284,11 @@ class CameraRtspServer(
             try {
                 socket.tcpNoDelay = true
                 socket.soTimeout = 15_000
+                // Here, under the timeout and off the accept thread: Android 8 to 13
+                // handshake TLS wherever a socket's streams are first asked for.
+                (socket as? SSLSocket)?.startHandshake()
+                output = socket.getOutputStream()
+                input = BufferedInputStream(socket.getInputStream())
                 while (open) {
                     val request = line() ?: break
                     if (request.isBlank()) continue

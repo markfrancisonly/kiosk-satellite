@@ -107,7 +107,7 @@ Certain settings remain unique to each kiosk regardless of the profile configura
 | Identity | `device.name`, `device.hostname`, `esphome.node_name`, `esphome.mac_override`, `esphome.real_mac`, `btproxy.key`, `sendspin.client_id`, `sendspin.local_player_name`, `ha.satellite_entity` |
 | Shizuku | `shizuku.install_updates` |
 | Interface language | `ui.language` |
-| Remote admin & fleet | `remote.enabled`, `remote.port`, `remote.password`, `remote.fleet_discovery`, `fleet.*` |
+| Remote admin & fleet | `remote.enabled`, `remote.port`, `remote.password`, `remote.fleet_discovery`, `remote.tls`, `fleet.*` |
 | Hardware picks | `camera.device`, `camera.rtsp.resolution`, `camera.rtsp.analysis`, `motion.camera`, `audio.mic_device`, `audio.speaker_device`, `audio.mic_channel`, `audio.mic_source`, `audio.mic_echo_cancellation`, `audio.mic_gain_db`, `audio.mic_agc`, `audio.mic_noise_suppression`, `audio.mic_capture_format`, `render.disable_impeller`, `render.legacy_webview`, `ui.scale`, `screen.ambient_display` |
 | Followed player | `sendspin.player`, `sendspin.player_source`, `sendspin.player_name` |
 | Weather preview | `screensaver.weather_preview`, `screensaver.weather_preview_condition`, `screensaver.weather_preview_period` |
@@ -125,12 +125,12 @@ Files referenced by settings (like notification chimes, gallery photos, or local
 | Endpoint | Method | Token | Description |
 | --- | --- | --- | --- |
 | `/api/fleet/identity` | GET | none | `{id, name, version, leader, follows}`: Identifies the kiosk to other devices. |
-| `/api/fleet/invite` | POST | none | `{invite, leader: {id, name, version, port}}`. Verifies the source kiosk, then displays the invite on-screen. Rate limited. |
+| `/api/fleet/invite` | POST | none | `{invite, leader: {id, name, version, port, tls}}`. Verifies the source kiosk, then displays the invite on-screen. Rate limited. `tls` says the leader's admin port serves HTTPS. |
 | `/api/fleet/invite/<nonce>` | GET | none | `{status}`: Returns `pending`, `accepted` (includes `token` once), `declined`, or `unknown`. |
 | `/api/fleet/status` | GET | fleet | Returns the version, applied revision, local changes to synced settings, and update status. |
 | `/api/fleet/apply` | POST | fleet | `{revision, version, settings}`. Held in queue if versions differ. |
 | `/api/fleet/leave` | POST | fleet | Notifies the kiosk that the leader removed it from the fleet. |
-| `/api/fleet/roster` | POST | fleet | `{devices: [{id, name, version, address, port}]}`: Replaces the saved member directory independently of settings sync. Contains no fleet tokens. |
+| `/api/fleet/roster` | POST | fleet | `{devices: [{id, name, version, address, port, tls}]}`: Replaces the saved member directory independently of settings sync. Contains no fleet tokens. |
 
 The status response includes `rosterRevision` on releases that support the directory. The leader sends a roster only when that revision differs from its current member list.
 

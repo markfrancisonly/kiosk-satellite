@@ -8,6 +8,7 @@ import '../../core/command_registry.dart';
 import '../../core/events.dart';
 import '../../core/manager.dart';
 import '../../core/permissions.dart';
+import '../../core/tls_identity.dart';
 import '../device_camera/native_camera.dart' show snapshotResolution;
 import '../device_camera/camera_resolutions.dart';
 import '../gestures/gesture_mappings.dart';
@@ -80,12 +81,22 @@ class MotionManager extends Manager {
     super.commands,
     super.log,
     this._settings, {
+    TlsIdentity? tls,
     this._selfLightQuiet = const Duration(milliseconds: 2500),
     this._retryFloor = const Duration(seconds: 5),
     this._pauseCeiling = const Duration(minutes: 3),
-  });
+  }) : _tlsShared = tls;
 
   final SettingsManager _settings;
+
+  /// The certificate Encrypt the stream serves with, shared with the
+  /// remote admin by the composition root; one of this manager's own
+  /// otherwise (tests).
+  final TlsIdentity? _tlsShared;
+  late final TlsIdentity _tls = _tlsShared ?? TlsIdentity(_settings, bus, log);
+
+  /// Why Encrypt the stream has no listener up, for the status row.
+  String? _rtspTlsError;
   late final CameraDiagnostics _diagnostics = CameraDiagnostics(log);
   final _rtspAudio = RtspAudio();
   bool _rtspDemand = false;
@@ -97,6 +108,12 @@ class MotionManager extends Manager {
   bool get _rtspEnabled =>
       _settings.get(defs.cameraEnabled) &&
       _settings.get(defs.cameraRtspEnabled);
+
+  /// The RTSP protocol only: ONVIF clients, Home Assistant's first, speak
+  /// plain http to the device service whatever it advertises.
+  bool get _rtspTls =>
+      _settings.get(defs.cameraStreamingProtocol) == 'rtsp' &&
+      _settings.get(defs.cameraRtspTls);
 
   void _configureRtsp({bool force = false}) {
     final (width, height) = cameraStreamResolution(
@@ -126,6 +143,7 @@ class MotionManager extends Manager {
       'auth': _settings.get(defs.cameraRtspAuth),
       'username': _settings.get(defs.cameraRtspUsername),
       'password': _settings.get(defs.cameraRtspPassword),
+      'tls': _rtspTls,
     };
     if (!force && mapEquals(config, _lastRtspConfig)) return;
     final overlayOnly =
@@ -148,13 +166,37 @@ class MotionManager extends Manager {
     _rtspConfiguration = _rtspConfiguration.then((_) async {
       if (_disposed) return;
       try {
+        var native = config;
         if (config['enabled'] == true) {
           await _ensurePermission();
           if (config['audio'] == true) {
             await ensureOsPermission(Permission.microphone);
           }
+          // The PEM pair rides along only for the listener; it never
+          // enters the comparison above, so a renewed certificate reaches
+          // the native side through the forced reconfigure instead.
+          if (config['tls'] == true) {
+            try {
+              final material = await _tls.load();
+              native = {
+                ...config,
+                'certificate': material.certificate,
+                'privateKey': material.privateKey,
+              };
+              _rtspTlsError = null;
+            } catch (e) {
+              // No certificate, no listener: the one already up would keep
+              // serving plain text under a switch that says encrypted.
+              _rtspTlsError = 'No TLS certificate for the stream: $e';
+              log.warn(name, 'RTSP: $_rtspTlsError');
+              native = {...config, 'enabled': false};
+              _lastRtspConfig = null;
+            }
+          } else {
+            _rtspTlsError = null;
+          }
         }
-        final status = await NativeRtsp.configure(config);
+        final status = await NativeRtsp.configure(native);
         if (status['error'] != null) log.warn(name, 'RTSP: ${status['error']}');
       } catch (e) {
         _lastRtspConfig = null;
@@ -420,6 +462,7 @@ class MotionManager extends Manager {
           try {
             return CommandResult.ok({
               ...await NativeRtsp.status(),
+              if (_rtspTlsError != null) 'error': _rtspTlsError,
               if (_rtspAudio.error != null) 'audioError': _rtspAudio.error,
               'audioSuspended': _rtspAudio.suspended,
             });
@@ -485,6 +528,11 @@ class MotionManager extends Manager {
     // itself detached on the way out (handled in [_onCameraLost]); this
     // is the moment a rebind can land on the new native side. A session
     // still held here is stale by definition: nothing native backs it.
+    // A renewal restarts only a stream serving the old certificate: a
+    // forced reconfigure drops the viewers of a plain one for nothing.
+    bus.on<TlsIdentityChanged>().listen((_) {
+      if (_rtspEnabled && _rtspTls) _configureRtsp(force: true);
+    });
     bus.on<ActivityAttached>().listen((_) {
       _configureRtsp(force: true);
       if (_camera != null) {

@@ -27,8 +27,8 @@ adb shell am start -n me.jxl.kiosk_satellite/.MainActivity \
 ## Reaching a kiosk by name
 
 Every kiosk with its remote admin on answers to a hostname on the local
-network, so the admin opens at `http://<hostname>.local:2324` from a laptop
-with no IP address to remember. The **mDNS name** setting under Settings →
+network, so the admin opens at `http://<hostname>.local:2324` (`https://`
+with **Use HTTPS** on) from a laptop with no IP address to remember. The **mDNS name** setting under Settings →
 Device, right under Device name, holds it. It is filled in from the device
 name as a DNS label under `ks-` (the device name "Kitchen Tablet" becomes
 `ks-kitchen-tablet`, answering to `ks-kitchen-tablet.local`), the same name
@@ -63,7 +63,7 @@ own login card shows first if its password differs.
 | What is listed | Kiosks with **Remote management** on, a password set and **Find other kiosks** on, on the same network segment. Multicast does not cross VLANs by itself. Through an mDNS reflector on the router it does, and each kiosk is listed under the address its own announcement carries, not the router's, so calls and the switcher reach it as long as the VLANs route to each other. |
 | Saved fleet members | Accepted members remain listed without multicast. Leaders store their followers and send the member directory to each follower. Discovery refreshes known addresses. Opening another kiosk still requires a reachable admin endpoint. |
 | Switch | **Find other kiosks** under Settings → Device → Remote Administration, on by default. Off, the kiosk neither announces nor listens, and the dropdown stays plain text. |
-| Command | `fleet` answers the same list: `{enabled, devices: [{id, name, version, address, port, url, self}]}`. The WebSocket carries a `fleet` event on every change. |
+| Command | `fleet` answers the same list: `{enabled, devices: [{id, name, version, address, port, tls, url, self}]}`; `tls` says the kiosk serves HTTPS and `url` carries the matching scheme. The WebSocket carries a `fleet` event on every change. |
 | Port 5353 | Hearing the others needs the mDNS port. Where something on the device holds it exclusively the kiosk still announces, and the log says the others will not be heard. |
 
 ## Fleet Management
@@ -86,8 +86,24 @@ With the switcher in place, one kiosk can lead the others: it pushes the setting
 - `GET /api/health` is the one unauthenticated endpoint: it exists for
   external monitoring to poll, and a monitor cannot do a login dance. It
   serves read-only hardware facts only.
-- Optional TLS with a self-signed cert (off by default; LAN-only assumption
-  documented).
+- **Use HTTPS** (Settings → Device → Remote Administration, off by
+  default) serves the page, the API and the WebSocket over TLS on the same
+  port, with a certificate the kiosk makes for itself (EC P-256,
+  self-signed, 825 days); the camera stream's
+  [RTSPS](camera.md#rtsp--onvif-streaming) serves the same one. A browser
+  warns until the certificate is trusted. `tlsCertificate` answers its
+  SHA-256 fingerprint, expiry and PEM text, for trusting it elsewhere;
+  `renewTlsCertificate` makes a new one after a rename, a move or before
+  it ends, and whatever serves with it restarts on the new one. Other
+  kiosks read the scheme from the mDNS announcement (`tls=1`) and the
+  fleet directory, so the switcher, Fleet Management and the intercom keep
+  working. They accept the self-signed certificate without checking it:
+  the traffic between kiosks is encrypted but not authenticated, the same
+  trust as plain HTTP. Home Assistant's ESPHome *Visit* link goes away
+  while HTTPS is on (it can only open plain http); the Admin URL sensor
+  carries the right address. Android only: on iOS the switch reports that
+  HTTPS is not available, and the server stays off until it is turned
+  back off.
 
 ## REST surface
 

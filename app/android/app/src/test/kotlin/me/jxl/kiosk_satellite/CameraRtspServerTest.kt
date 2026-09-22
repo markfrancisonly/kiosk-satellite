@@ -72,6 +72,23 @@ class CameraRtspServerTest {
         } finally { server.close() }
     }
 
+    @Test fun theAcceptThreadNeverAsksAViewerSocketForItsStreams() {
+        // Android 8 to 13 handshake TLS inside the stream getters: asked on the accept
+        // thread, one silent viewer held the listener and its lock, and a plain one stopped it.
+        val server = server(LinkedBlockingQueue())
+        try {
+            val asked = mutableListOf<String>()
+            val socket = object : Socket() {
+                override fun getInputStream(): java.io.InputStream { asked += "input"; throw java.io.IOException("handshake") }
+                override fun getOutputStream(): java.io.OutputStream { asked += "output"; throw java.io.IOException("handshake") }
+            }
+            val clientClass = CameraRtspServer::class.java.declaredClasses.first { it.simpleName == "Client" }
+            clientClass.getDeclaredConstructor(CameraRtspServer::class.java, Socket::class.java)
+                .apply { isAccessible = true }.newInstance(server, socket)
+            assertEquals(emptyList<String>(), asked)
+        } finally { server.close() }
+    }
+
     @Test fun encoderCannotHideAStoppedListener() {
         val server = server(LinkedBlockingQueue())
         try {
@@ -157,8 +174,37 @@ class CameraRtspServerTest {
         } finally { silent.close() }
     }
 
-    private class Peer(port: Int) : AutoCloseable {
-        private val socket = Socket("127.0.0.1", port).apply { soTimeout = 3000 }
+    @Test fun tlsListenerServesRtspsAndRefusesPlainText() = withJdkTls {
+        val pem = TlsCertificate.generate(listOf("localhost"), listOf(java.net.InetAddress.getByName("127.0.0.1")), 10,
+            { Base64.getEncoder().encodeToString(it) })
+        val tls = TlsCertificate.sslContext(pem.certificate, pem.privateKey, { Base64.getDecoder().decode(it) })
+        val server = CameraRtspServer(0, null, "", { Base64.getEncoder().encodeToString(it) }, {}, {}, tls = tls)
+        try {
+            server.config(listOf(sps, pps))
+            Peer(server.localPort, trustAllContext().socketFactory).use { peer ->
+                assertTrue(peer.request("OPTIONS").startsWith("RTSP/1.0 200"))
+                assertTrue(peer.request("DESCRIBE").contains("sprop-parameter-sets"))
+                assertEquals("TLS", server.clientDetails.single()["transport"])
+                val setup = peer.request("SETUP", "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n", peer.uri + "/trackID=0")
+                val session = Regex("Session: ([^;\\n]+)").find(setup)!!.groupValues[1]
+                assertTrue(peer.request("PLAY", "Session: $session\r\n").startsWith("RTSP/1.0 200"))
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                while (server.clientDetails.single()["playing"] != true && System.nanoTime() < deadline) Thread.sleep(5)
+                // Frames reach a playing viewer over TLS.
+                server.frame(listOf(ByteArray(3500) { (it % 251).toByte() }.also { it[0] = 0x65 }), 1_000_000)
+                assertEquals(1, peer.packet().first)
+                repeat(5) { assertEquals(0, peer.packet().first) }
+            }
+            // A plain-text viewer never gets an RTSP reply: the handshake fails on its first bytes.
+            Peer(server.localPort).use { peer ->
+                assertThrows(Exception::class.java) { peer.request("OPTIONS") }
+            }
+            assertTrue(server.listening)
+        } finally { server.close() }
+    }
+
+    private class Peer(port: Int, factory: javax.net.SocketFactory = javax.net.SocketFactory.getDefault()) : AutoCloseable {
+        private val socket = factory.createSocket("127.0.0.1", port).apply { soTimeout = 3000 }
         private val input = BufferedInputStream(socket.getInputStream())
         private var seq = 0
         val uri = "rtsp://127.0.0.1:$port/camera"

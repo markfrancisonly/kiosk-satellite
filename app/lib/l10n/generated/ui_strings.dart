@@ -6844,6 +6844,18 @@ abstract class UiStrings {
   /// Setting label.
   ///
   /// In en, this message translates to:
+  /// **'Encrypt the stream'**
+  String get settingCameraRtspTlsTitle;
+
+  /// Help below this setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Serve RTSP over TLS (rtsps://) with the kiosk\'s own self-signed certificate. Viewers must accept it: ffmpeg does, go2rtc does for an address rather than a name. ONVIF always stays plain, as Home Assistant expects.'**
+  String get settingCameraRtspTlsDescription;
+
+  /// Setting label.
+  ///
+  /// In en, this message translates to:
   /// **'Require authentication'**
   String get settingCameraRtspAuthTitle;
 
@@ -8682,6 +8694,18 @@ abstract class UiStrings {
   /// In en, this message translates to:
   /// **'Announce this device on the network and list the other kiosks in the remote admin, to switch between them.'**
   String get settingRemoteFleetDiscoveryDescription;
+
+  /// Setting label.
+  ///
+  /// In en, this message translates to:
+  /// **'Use HTTPS'**
+  String get settingRemoteTlsTitle;
+
+  /// Help below the setting.
+  ///
+  /// In en, this message translates to:
+  /// **'Serve the remote admin and its API over TLS with a certificate the kiosk makes for itself. A browser warns about it until it is trusted; other kiosks follow the change by themselves.'**
+  String get settingRemoteTlsDescription;
 
   /// Label or explanation on this Device settings page.
   ///

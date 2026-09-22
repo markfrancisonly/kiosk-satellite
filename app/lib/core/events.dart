@@ -931,6 +931,12 @@ class RemoteObserversChanged extends AppEvent {
   final Set<String> topics;
 }
 
+/// The kiosk's TLS certificate was remade: whatever serves with it
+/// restarts on the new one.
+class TlsIdentityChanged extends AppEvent {
+  const TlsIdentityChanged();
+}
+
 /// The dashboard document was replaced or detached.
 class VoiceTimersCleared extends AppEvent {
   const VoiceTimersCleared();

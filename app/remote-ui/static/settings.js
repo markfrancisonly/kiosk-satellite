@@ -1415,7 +1415,7 @@ kioskText('Lockdown Mode makes the dashboard non-interactive, arms every ' +
     card.className = 'card';
     card.appendChild(readOnlyRow(deviceText('Admin address'),
       deviceText('Open this address in a browser on your computer.'),
-      `http://${location.host}`));
+      location.origin));
     root.append(heading, card);
     // The same admin by name (issue #470), once the device says what it
     // answers to: the Hostname setting, or the device name as a DNS

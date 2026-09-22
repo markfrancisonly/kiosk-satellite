@@ -9,6 +9,11 @@ import '../../core/manager.dart';
 import '../settings/definitions.dart' as defs;
 import '../settings/settings_manager.dart';
 
+/// Where a kiosk's remote admin answers: https once it said (in its
+/// announcement, the directory or an invitation) that Use HTTPS is on.
+Uri adminUri(String host, int port, {bool tls = false, String path = ''}) =>
+    Uri(scheme: tls ? 'https' : 'http', host: host, port: port, path: path);
+
 /// One kiosk discovered on the network or saved in the fleet directory.
 class FleetDevice {
   const FleetDevice({
@@ -17,6 +22,7 @@ class FleetDevice {
     required this.version,
     required this.address,
     required this.port,
+    this.tls = false,
     this.self = false,
   });
 
@@ -26,11 +32,14 @@ class FleetDevice {
   final String address;
   final int port;
 
+  /// Whether its admin port serves HTTPS.
+  final bool tls;
+
   /// Whether this is the device the list was read from.
   final bool self;
 
   /// Where its remote admin answers.
-  String get url => Uri(scheme: 'http', host: address, port: port).toString();
+  String get url => adminUri(address, port, tls: tls).toString();
 
   static FleetDevice? fromMap(Map<Object?, Object?>? raw, {bool self = false}) {
     if (raw == null) return null;
@@ -43,6 +52,7 @@ class FleetDevice {
       version: '${raw['version'] ?? ''}',
       address: address,
       port: port.toInt(),
+      tls: raw['tls'] == true,
       self: self,
     );
   }
@@ -53,6 +63,7 @@ class FleetDevice {
     'version': version,
     'address': address,
     'port': port,
+    'tls': tls,
     'url': url,
     'self': self,
   };
@@ -64,6 +75,7 @@ class FleetDevice {
     'version': version,
     'address': address,
     'port': port,
+    'tls': tls,
   };
 
   static FleetDevice? directoryEntry(Object? raw) {
@@ -148,7 +160,11 @@ class FleetManager extends Manager {
   /// server.
   String? get hostUrl => !serving || hostname.isEmpty
       ? null
-      : 'http://$hostname.local:${_settings.get(defs.remotePort).toInt()}';
+      : adminUri(
+          '$hostname.local',
+          _settings.get(defs.remotePort).toInt(),
+          tls: _settings.get(defs.remoteTls),
+        ).toString();
 
   /// Whether the native announcer should run at all: for the fleet, for
   /// the hostname, or both.
@@ -203,6 +219,7 @@ class FleetManager extends Manager {
         if (e.key == defs.remoteEnabled.key ||
             e.key == defs.remotePassword.key ||
             e.key == defs.remotePort.key ||
+            e.key == defs.remoteTls.key ||
             e.key == defs.remoteFleetDiscovery.key ||
             e.key == defs.deviceName.key ||
             e.key == defs.deviceHostname.key) {
@@ -262,6 +279,7 @@ class FleetManager extends Manager {
       'port': _settings.get(defs.remotePort).toInt(),
       'hostname': host,
       'fleet': enabled,
+      'tls': _settings.get(defs.remoteTls),
     };
     try {
       await _methods.invokeMethod<void>('start', args);

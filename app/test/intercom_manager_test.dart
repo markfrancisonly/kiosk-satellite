@@ -163,6 +163,7 @@ void main() {
       return http.Response(jsonEncode(out), 200);
     });
     intercom
+      ..peerClientFactory = intercom.clientFactory
       ..micPermission = (() async => true)
       ..autoAnswerDelay = const Duration(milliseconds: 60)
       ..endedHold = const Duration(milliseconds: 120)

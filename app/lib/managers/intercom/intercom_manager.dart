@@ -7,12 +7,16 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../core/command_registry.dart';
 import '../../core/events.dart';
+import '../../core/ha_http_overrides.dart'
+    show kioskPeerClient, kioskPeerHttpClient;
 import '../../core/manager.dart';
 import '../audio/mic_hub.dart';
+import '../fleet/fleet_manager.dart' show adminUri;
 import '../notifications/notification_sounds.dart';
 import '../remote/auth.dart';
 import '../settings/definitions.dart' as defs;
@@ -27,6 +31,7 @@ class IntercomKiosk {
     required this.address,
     required this.port,
     required this.version,
+    this.tls = false,
   });
 
   final String id;
@@ -34,6 +39,9 @@ class IntercomKiosk {
   String address;
   int port;
   String version;
+
+  /// Whether its admin port serves HTTPS.
+  bool tls;
 
   /// Whether the kiosk is discovered or remains in the saved fleet.
   bool heard = true;
@@ -45,7 +53,7 @@ class IntercomKiosk {
   DateTime? probedAt;
   bool probeFailed = false;
 
-  String get url => Uri(scheme: 'http', host: address, port: port).toString();
+  String get url => adminUri(address, port, tls: tls).toString();
 
   /// ready, off, key, dnd, unreachable, offline, unknown. Unreachable is
   /// a known kiosk whose admin port does not answer.
@@ -219,10 +227,12 @@ class IntercomManager extends Manager {
   @override
   String get name => 'intercom';
 
-  /// Swapped for fakes in tests.
+  /// Swapped for fakes in tests. Calls to other kiosks go through
+  /// [peerClientFactory], which takes their self-signed certificates.
   http.Client Function() clientFactory = http.Client.new;
+  http.Client Function() peerClientFactory = kioskPeerClient;
   WebSocketChannel Function(Uri uri) socketFactory = (uri) =>
-      WebSocketChannel.connect(uri);
+      IOWebSocketChannel.connect(uri, customClient: kioskPeerHttpClient());
   IntercomAudio audio = IntercomAudio();
   MicHub micHub = MicHub.instance;
   Future<bool> Function() micPermission = () async =>
@@ -281,6 +291,7 @@ class IntercomManager extends Manager {
   String _selfName = '';
   String _selfAddress = '';
   int _selfPort = 0;
+  bool _selfTls = false;
   String _selfVersion = '';
   bool _fleetEnabled = false;
   bool _micGranted = true;
@@ -468,6 +479,7 @@ class IntercomManager extends Manager {
           _selfName = '${d['name'] ?? ''}';
           _selfAddress = '${d['address'] ?? ''}';
           _selfPort = (d['port'] as num?)?.toInt() ?? 0;
+          _selfTls = d['tls'] == true;
           _selfVersion = '${d['version'] ?? ''}';
           continue;
         }
@@ -480,10 +492,12 @@ class IntercomManager extends Manager {
             address: '${d['address'] ?? ''}',
             port: (d['port'] as num?)?.toInt() ?? 2324,
             version: '${d['version'] ?? ''}',
+            tls: d['tls'] == true,
           );
         } else {
           if (k.address != '${d['address'] ?? ''}' ||
-              k.port != ((d['port'] as num?)?.toInt() ?? k.port)) {
+              k.port != ((d['port'] as num?)?.toInt() ?? k.port) ||
+              k.tls != (d['tls'] == true)) {
             k
               ..enabled = null
               ..keyFingerprint = null
@@ -494,6 +508,7 @@ class IntercomManager extends Manager {
             ..name = '${d['name'] ?? ''}'
             ..address = '${d['address'] ?? ''}'
             ..port = (d['port'] as num?)?.toInt() ?? k.port
+            ..tls = d['tls'] == true
             ..version = '${d['version'] ?? ''}'
             ..heard = true;
         }
@@ -542,7 +557,11 @@ class IntercomManager extends Manager {
 
   Future<void> _probe(IntercomKiosk k) async {
     final url = k.url;
-    final res = await _get('$url/api/intercom/identity', timeout: probeTimeout);
+    final res = await _get(
+      '$url/api/intercom/identity',
+      timeout: probeTimeout,
+      peer: true,
+    );
     if (k.url != url) return;
     k.probedAt = DateTime.now();
     final data = _jsonOf(res);
@@ -1025,6 +1044,7 @@ class IntercomManager extends Manager {
     final res = await _post(
       '${k.url}/api/intercom/call',
       {'call': id, 'kind': 'call', 'from': _selfInfo()},
+      peer: true,
       token: _tokens.issueToken(
         ttl: const Duration(seconds: 60),
         claims: {'intercom': id, 'from': _selfId, 'n': _nonce()},
@@ -1387,6 +1407,7 @@ class IntercomManager extends Manager {
     final res = await _post(
       '${k.url}/api/intercom/call',
       {'call': c.id, 'kind': 'broadcast', 'from': _selfInfo()},
+      peer: true,
       token: _tokens.issueToken(
         ttl: const Duration(seconds: 60),
         claims: {'intercom': c.id, 'from': _selfId, 'n': _nonce()},
@@ -1413,7 +1434,8 @@ class IntercomManager extends Manager {
       claims: {'intercom': callId, 'from': _selfId, 'n': _nonce()},
     );
     final uri = Uri.parse(
-      'ws://${k.address}:${k.port}/api/intercom/audio/$callId?token=$token',
+      '${k.tls ? 'wss' : 'ws'}://${k.address}:${k.port}'
+      '/api/intercom/audio/$callId?token=$token',
     );
     try {
       final channel = socketFactory(uri);
@@ -1586,15 +1608,16 @@ class IntercomManager extends Manager {
   Future<bool> _signalPeer(String action) async {
     final c = _call;
     if (c == null) return false;
-    final url = Uri(
-      scheme: 'http',
-      host: '${c.peer['address']}',
-      port: (c.peer['port'] as num).toInt(),
+    final url = adminUri(
+      '${c.peer['address']}',
+      (c.peer['port'] as num).toInt(),
+      tls: c.peer['tls'] == true,
       path: '/api/intercom/call/${c.id}',
     ).toString();
     final res = await _post(
       url,
       {'action': action},
+      peer: true,
       token: _tokens.issueToken(
         ttl: const Duration(seconds: 60),
         claims: {'intercom': c.id, 'from': _selfId, 'n': _nonce()},
@@ -1998,6 +2021,7 @@ class IntercomManager extends Manager {
     'name': _selfName,
     'address': _selfAddress,
     'port': _selfPort,
+    'tls': _selfTls,
     'version': _selfVersion,
   };
 
@@ -2006,6 +2030,7 @@ class IntercomManager extends Manager {
     'name': k.name,
     'address': k.address,
     'port': k.port,
+    'tls': k.tls,
     'version': k.version,
   };
 
@@ -2015,8 +2040,9 @@ class IntercomManager extends Manager {
     String url, {
     Duration? timeout,
     String? token,
+    bool peer = false,
   }) async {
-    final client = clientFactory();
+    final client = (peer ? peerClientFactory : clientFactory)();
     try {
       return await client
           .get(
@@ -2036,8 +2062,9 @@ class IntercomManager extends Manager {
     String url,
     Map<String, Object?> body, {
     required String token,
+    bool peer = false,
   }) async {
-    final client = clientFactory();
+    final client = (peer ? peerClientFactory : clientFactory)();
     try {
       return await client
           .post(

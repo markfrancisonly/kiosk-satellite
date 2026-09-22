@@ -4305,6 +4305,21 @@ const cameraRtspAudio = SettingDef<bool>(
   dependsOn: 'camera.rtsp.enabled',
 );
 
+const cameraRtspTls = SettingDef<bool>(
+  key: 'camera.rtsp.tls',
+  type: SettingType.boolean,
+  defaultValue: false,
+  title: 'Encrypt the stream',
+  description:
+      'Serve RTSP over TLS (rtsps://) with the kiosk\'s own self-signed certificate. Viewers must accept it: ffmpeg does, go2rtc does for an address rather than a name. ONVIF always stays plain, as Home Assistant expects.',
+  category: 'Camera',
+  section: 'RTSP & ONVIF Streaming',
+  subpage: 'RTSP & ONVIF Streaming',
+  dependsOn: 'camera.rtsp.enabled',
+  alsoDependsOn: 'camera.rtsp.protocol',
+  alsoDependsOnValue: 'rtsp',
+);
+
 const cameraRtspAuth = SettingDef<bool>(
   key: 'camera.rtsp.auth',
   type: SettingType.boolean,
@@ -6997,6 +7012,20 @@ const remoteFleetDiscovery = SettingDef<bool>(
   perDevice: true,
 );
 
+const remoteTls = SettingDef<bool>(
+  key: 'remote.tls',
+  type: SettingType.boolean,
+  defaultValue: false,
+  title: 'Use HTTPS',
+  description:
+      'Serve the remote admin and its API over TLS with a certificate the kiosk makes for itself. A browser warns about it until it is trusted; other kiosks follow the change by themselves.',
+  category: 'Device',
+  section: 'Remote Administration',
+  subpage: 'Remote Administration',
+  dependsOn: 'remote.enabled',
+  perDevice: true,
+);
+
 // ── Updates ────────────────────────────────────────────────────────────
 // Where releases come from. GitHub is the default and the only source
 // until now; a custom repository is a folder on the user's own web server
@@ -8017,6 +8046,7 @@ const List<SettingDef<Object>> allSettings = [
   cameraRtspFps,
   cameraRtspBitrate,
   cameraRtspAudio,
+  cameraRtspTls,
   cameraRtspAuth,
   cameraRtspUsername,
   cameraRtspPassword,
@@ -8173,6 +8203,7 @@ const List<SettingDef<Object>> allSettings = [
   remoteEnabled,
   remotePort,
   remotePassword,
+  remoteTls,
   remoteFleetDiscovery,
   updateSource,
   updateSourceUrl,

@@ -6936,7 +6936,8 @@ class _AdminAddressCardState extends State<_AdminAddressCard> {
   @override
   Widget build(BuildContext context) {
     final port = widget.container.settings.get(remotePort).toInt();
-    final address = 'http://${_ip ?? '…'}:$port';
+    final scheme = widget.container.settings.get(remoteTls) ? 'https' : 'http';
+    final address = '$scheme://${_ip ?? '…'}:$port';
     // The same admin by name (issue #470), while the kiosk has one: the
     // Hostname setting or the device name as a DNS label.
     final hostUrl = widget.container.fleet.hostUrl;

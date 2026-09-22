@@ -52,6 +52,10 @@ const settingMessageIds = <String, Map<String, String>>{
     "title": "settingRemoteFleetDiscoveryTitle",
     "description": "settingRemoteFleetDiscoveryDescription",
   },
+  "remote.tls": {
+    "title": "settingRemoteTlsTitle",
+    "description": "settingRemoteTlsDescription",
+  },
   "service.cpu_awake": {
     "title": "settingServiceCpuAwakeTitle",
     "description": "settingServiceCpuAwakeDescription",
@@ -859,6 +863,10 @@ const settingMessageIds = <String, Map<String, String>>{
   "camera.rtsp.audio": {
     "title": "settingCameraRtspAudioTitle",
     "description": "settingCameraRtspAudioDescription",
+  },
+  "camera.rtsp.tls": {
+    "title": "settingCameraRtspTlsTitle",
+    "description": "settingCameraRtspTlsDescription",
   },
   "camera.rtsp.auth": {
     "title": "settingCameraRtspAuthTitle",

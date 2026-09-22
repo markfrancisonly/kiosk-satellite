@@ -51,6 +51,10 @@
     "title": "settingRemoteFleetDiscoveryTitle",
     "description": "settingRemoteFleetDiscoveryDescription"
   },
+  "remote.tls": {
+    "title": "settingRemoteTlsTitle",
+    "description": "settingRemoteTlsDescription"
+  },
   "service.cpu_awake": {
     "title": "settingServiceCpuAwakeTitle",
     "description": "settingServiceCpuAwakeDescription"
@@ -858,6 +862,10 @@
   "camera.rtsp.audio": {
     "title": "settingCameraRtspAudioTitle",
     "description": "settingCameraRtspAudioDescription"
+  },
+  "camera.rtsp.tls": {
+    "title": "settingCameraRtspTlsTitle",
+    "description": "settingCameraRtspTlsDescription"
   },
   "camera.rtsp.auth": {
     "title": "settingCameraRtspAuthTitle",

@@ -53,6 +53,7 @@ class KioskApplication : Application(), CameraXConfig.Provider {
             .build()
 
     private lateinit var micRecorder: MicRecorder
+    private lateinit var tls: TlsBridge
     private lateinit var background: BackgroundBridge
     private lateinit var deviceDetails: DeviceDetails
     private lateinit var brightness: BrightnessBridge
@@ -139,6 +140,7 @@ class KioskApplication : Application(), CameraXConfig.Provider {
         tapSound = TapSoundBridge(applicationContext, messenger)
         bluetoothProxy = BluetoothProxyBridge(applicationContext, messenger)
         fleet = FleetBridge(applicationContext, messenger)
+        tls = TlsBridge(messenger)
         intercomAudio = IntercomAudio(applicationContext, messenger)
         plugins = me.jxl.kiosk_satellite.plugins.PluginBridge(applicationContext, messenger)
     }

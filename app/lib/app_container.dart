@@ -2,6 +2,7 @@ import 'core/command_registry.dart';
 import 'core/event_bus.dart';
 import 'core/logging.dart';
 import 'core/manager.dart';
+import 'core/tls_identity.dart';
 import 'managers/plugins/plugin_manager.dart';
 import 'managers/shizuku/shizuku_manager.dart';
 import 'managers/assist_pipeline/assist_pipeline_manager.dart';
@@ -49,6 +50,9 @@ import 'managers/wake_word/wake_word_manager.dart';
 class AppContainer {
   AppContainer() {
     settings = SettingsManager(bus, commands, log);
+    // Composition-root wiring: the one certificate the remote admin (Use
+    // HTTPS) and the camera stream (Encrypt the stream) both serve with.
+    tls = TlsIdentity(settings, bus, log);
     device = DeviceManager(bus, commands, log, settings);
     screen = ScreenManager(bus, commands, log, settings);
     service = ServiceManager(bus, commands, log, settings);
@@ -72,7 +76,7 @@ class AppContainer {
     // Before motion: its init runs the legacy motion-camera migration the
     // motion manager's gate reads.
     deviceCamera = DeviceCameraManager(bus, commands, log, settings);
-    motion = MotionManager(bus, commands, log, settings);
+    motion = MotionManager(bus, commands, log, settings, tls: tls);
     proximity = ProximityManager(bus, commands, log, settings);
     location = LocationManager(bus, commands, log, settings);
     analytics = AnalyticsManager(bus, commands, log, settings);
@@ -122,7 +126,7 @@ class AppContainer {
     shizuku = ShizukuManager(bus, commands, log);
     plugins = PluginManager(bus, commands, log);
     settings.pluginScreensavers = () => plugins.screensaverOptions;
-    remote = RemoteManager(bus, commands, log, settings);
+    remote = RemoteManager(bus, commands, log, settings, tls: tls);
     fleet = FleetManager(bus, commands, log, settings);
     fleetSync = FleetSyncManager(bus, commands, log, settings);
     intercom = IntercomManager(bus, commands, log, settings);
@@ -135,6 +139,7 @@ class AppContainer {
   late final commands = CommandRegistry(log).as('ui');
 
   late final SettingsManager settings;
+  late final TlsIdentity tls;
   late final DeviceManager device;
   late final ScreenManager screen;
   late final ServiceManager service;
